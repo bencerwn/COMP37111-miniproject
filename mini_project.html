@@ -1,0 +1,224 @@
+<html>
+	<head>
+	<style>
+		 body {
+			 margin 0;
+			 overflow: hidden;
+		 }
+	</style>
+	</head>
+	<body>
+
+	<script type = module>
+		import * as THREE from "./three.js-master/build/three.module.js";
+		// import { OrbitControls } from "./three.js-master/examples/jsm/controls/OrbitControls.js";
+		import { OrbitControls } from "https://web.cs.manchester.ac.uk/three/three.js-master/examples/jsm/controls/OrbitControls.js";
+		import { OBJLoader } from "./three.js-master/examples/jsm/loaders/OBJLoader.js";
+
+
+
+		// STATIC VARIABLES - Can only be changed before the simulation
+		const particleAmount = 5000;
+		const particlesPerGeneration = 10;
+		const particleSize = 0.2;
+		const timeToLive = 210;
+		const fuelColour = "yellow";
+		const backgroundColour = 0x555555;
+
+		// DYNAMIC VARIABLES - Can be changed during the simulation
+		var liquidGravity = -0.001;
+		var liquidAirResConstant = 0.001;
+		var fireAirResConstant = 0.03;
+
+
+		const sphereSegments = 4;
+
+		const sphereGeometry = new THREE.SphereGeometry(particleSize, sphereSegments, sphereSegments);
+		const liquidMaterial = new THREE.MeshBasicMaterial({color: fuelColour});
+		const fireMaterials = [
+			new THREE.MeshBasicMaterial({color: 0xfcf8f0}),
+			new THREE.MeshBasicMaterial({color: 0xffe9cf}),
+			new THREE.MeshBasicMaterial({color: 0xffe091}),
+			new THREE.MeshBasicMaterial({color: 0xffb357}),
+			new THREE.MeshBasicMaterial({color: 0xff8324}),
+			new THREE.MeshBasicMaterial({color: 0xff3624}),
+			new THREE.MeshBasicMaterial({color: 0xd41100}),
+			new THREE.MeshBasicMaterial({color: 0xa60d00}),
+			new THREE.MeshBasicMaterial({color: 0x260300}),
+		]
+		const invisibleMaterial = new THREE.MeshBasicMaterial({color: backgroundColour});
+
+		const scene = new THREE.Scene();;
+		const camera = new THREE.PerspectiveCamera(100, window.innerWidth / window.innerHeight, 10, 10000);
+		camera.position.set(10, 10, 10);
+		const renderer = new THREE.WebGLRenderer();
+		const controls = new OrbitControls(camera, renderer.domElement, window);
+		const objLoader = new OBJLoader();
+
+		var lastTime;
+		var fps;
+		var fpsMax = 0;
+		var fpsMin = 10000;
+		var fpsTotal = 0;
+		var framesTotal = 0;
+		var fpsAverage;
+		var fpsDiv = document.getElementById("framerate");
+
+		var particles = new Array(particleAmount);
+		var fuelOn = true;
+		var ignited = false;
+
+		
+
+		function setInitialVars(particle) {
+			if (fuelOn) { particle.material = liquidMaterial; }
+			else { particle.material = invisibleMaterial; }
+			particle.acceleration = {x: 0, y: 0, z: 0}
+			particle.position.x = (Math.random() - 0.5) * 0.5;
+			particle.position.y = (Math.random() - 0.5) * 0.5;
+			particle.position.z = 0;
+			particle.velocity = {
+				x: (Math.random() - 0.5) * 0.1, 
+				y: (Math.random() - 2) * 0.1, 
+				z: (Math.random() - 2)};
+			particle.lifetime = 0;
+			particle.fuelOn = fuelOn;
+			particle.ignited = ignited;
+		}
+
+		function init() {
+			scene.background = new THREE.Color(backgroundColour);
+			renderer.setClearColor(0x000000, 1.0);
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			document.body.appendChild(renderer.domElement);
+			objLoader.load("./flamethrower.obj", function(object) { 
+				object.rotateY(Math.PI / 2);
+				object.position.x = -2.8;
+				object.position.y = -1.8;
+				object.position.z = 5.5;
+				scene.add(object);
+			});
+
+			for (var n = 0; n < particleAmount / particlesPerGeneration; n++) {
+				for (var x = 0; x < particlesPerGeneration; x++) {
+					const i = (n * particlesPerGeneration) + x;
+					particles[i] = new THREE.Mesh(sphereGeometry, liquidMaterial);
+					scene.add(particles[i]);
+					setInitialVars(particles[i]);
+				}
+				renderer.render(scene, camera);
+				updateAllPositions(n * particlesPerGeneration);
+			}
+		}
+
+		function updateParticlePosition(particle) {
+			if (particle.ignited) {
+				if (particle.fuelOn) {
+					if (particle.lifetime < 1) { particle.material = liquidMaterial; } 
+					else if (particle.lifetime <= 2) { particle.material = fireMaterials[0]; } 
+					else if (particle.lifetime <= 5) { particle.material = fireMaterials[1]; } 
+					else if (particle.lifetime <= 10) { particle.material = fireMaterials[2]; } 
+					else if (particle.lifetime <= 20) { particle.material = fireMaterials[3]; } 
+					else if (particle.lifetime <= 40) { particle.material = fireMaterials[4]; } 
+					else if (particle.lifetime <= 60) { particle.material = fireMaterials[5]; } 
+					else if (particle.lifetime <= 100) { particle.material = fireMaterials[6]; }
+					else if (particle.lifetime <= 150) { particle.material = fireMaterials[7]; } 
+					else if (particle.lifetime <= 205) { particle.material = fireMaterials[8]; } 
+				}
+				else { particle.material = invisibleMaterial; }
+				particle.acceleration.x = 0;
+				particle.acceleration.y = (Math.random() - 0.2) * 0.001;
+				particle.acceleration.z = Math.pow(particle.velocity.z, 2) * fireAirResConstant;
+				particle.velocity.x += particle.acceleration.x;
+				particle.velocity.y += particle.acceleration.y;
+				particle.velocity.z += particle.acceleration.z;
+				particle.position.x += particle.velocity.x + (Math.random() - 0.5) * 0.3;
+				particle.position.y += particle.velocity.y + (Math.random() + 0.5) * 0.2;
+				particle.position.z += particle.velocity.z + (Math.random() - 0.5) * 0.5;
+			}
+			else {
+				particle.acceleration.x = 0;
+				particle.acceleration.y = liquidGravity;
+				particle.acceleration.z = Math.pow(particle.velocity.z, 2) * liquidAirResConstant;
+				particle.velocity.x += particle.acceleration.x;
+				particle.velocity.y += particle.acceleration.y;
+				particle.velocity.z += particle.acceleration.z;
+				particle.position.x += particle.velocity.x;
+				particle.position.y += particle.velocity.y;
+				particle.position.z += particle.velocity.z;
+			}
+			particle.lifetime += 1;
+		}
+
+		function updateAllPositions(currentParticleAmount) {
+			for (var n = 0; n < currentParticleAmount; n++) {
+				if (particles[n].lifetime > timeToLive) {
+					setInitialVars(particles[n]);
+				}
+				updateParticlePosition(particles[n]);
+			}
+		}
+		
+		function animate() {
+			requestAnimationFrame(animate);
+			updateAllPositions(particleAmount);
+			var now = Date.now();
+			if (lastTime !== undefined) {
+				fps = parseInt(1000 / (now - lastTime));
+				if (fps > fpsMax) {
+					fpsMax = fps;
+				}
+				if (fps < fpsMin && framesTotal > 100) {
+					fpsMin = fps;
+				}
+				fpsTotal += fps;
+				framesTotal++;
+				fpsAverage = parseInt(fpsTotal / framesTotal);
+				fpsDiv.innerHTML = "FPS: " + fps + "\nMin: " + fpsMin + "\nMax: " + fpsMax + "\nAvg: " + fpsAverage + "\nParticles: " + particleAmount + "\nSegments: " + sphereSegments;	
+			}
+			lastTime = now;
+			renderer.render(scene, camera);
+		}
+
+		document.getElementById("btn-toggle-flamethrower").addEventListener("click", function () {
+			fuelOn = !fuelOn;
+			ignited = fuelOn;
+		});
+		document.getElementById("btn-toggle-fuel").addEventListener("click", function () {
+			fuelOn = !fuelOn;
+			ignited = false;
+		});
+		document.getElementById("btn-ignite").addEventListener("click", function () {
+			ignited = fuelOn;
+		});
+		document.getElementById("slider-gravity").addEventListener("change", function () {
+			liquidGravity = parseFloat(document.getElementById("slider-gravity").value) * -1;
+		});
+		document.getElementById("slider-liquidairres").addEventListener("change", function () {
+			liquidAirResConstant = parseFloat(document.getElementById("slider-liquidairres").value);
+		});
+		document.getElementById("slider-fireairres").addEventListener("change", function () {
+			fireAirResConstant = parseFloat(document.getElementById("slider-fireairres").value);
+		});
+
+		
+		
+		init();
+		animate();
+
+	</script>
+
+		<div style="height: 320px; width: 150px; background-color: aqua; position: fixed; right: 10px;">
+			<button id="btn-toggle-flamethrower" style="width: 80%; margin: 1px 10%;">Toggle Flamethrower</button>
+			<button id="btn-toggle-fuel" style="width: 80%; margin: 1px 10%;">Toggle Fuel</button>
+			<button id="btn-ignite" style="width: 80%; margin: 1px 10%;">Ignite</button>
+			<label for="">Liquid Gravity</label>
+			<input type="range" min="0.001" max="0.1" value="0.001" step="0.001" id="slider-gravity">
+			<label for="">Liquid Air Res</label>
+			<input type="range" min="0.001" max="0.1" value="0.001" step="0.001" id="slider-liquidairres">
+			<label for="">Fire Air Res</label>
+			<input type="range" min="0.001" max="0.1" value="0.03" step="0.001" id="slider-fireairres">
+			<div id="framerate" style="white-space: pre-line;"></div>
+		</div>
+	</body>
+</html>
